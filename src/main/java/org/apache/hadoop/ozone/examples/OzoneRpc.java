@@ -33,23 +33,33 @@ import org.apache.hadoop.security.UserGroupInformation;
 import java.io.IOException;
 import java.util.HashMap;
 
+/**
+ * A mini demo program that access Ozone Volume/Bucket/Key via Ozone RPC
+ * with minimal dependency on classpath/configuration stuff.
+ * It has been tested with secure, non-secure, HA and non-HA Ozone clusters.
+ */
 public class OzoneRpc {
 
   static OzoneClient getOzoneClient(boolean secure, String omServiceId) throws IOException {
     OzoneConfiguration conf = new OzoneConfiguration();
     if (omServiceId != null) {
       conf.set("ozone.om.service.ids", omServiceId);
+      // TODO: If you have OM HA configured, change the following as appropriate.
       conf.set("ozone.om.address.ozone1.om1", "xyao-ozs-1.xyao-ozs.root.hwx.site:9862");
       conf.set("ozone.om.address.ozone1.om2", "xyao-ozs-2.xyao-ozs.root.hwx.site:9862");
       conf.set("ozone.om.address.ozone1.om3", "xyao-ozs-3.xyao-ozs.root.hwx.site:9862");
     } else {
+      // TODO: If you don't have OM HA configured, change the following as appropriate.
       conf.set("ozone.om.address", "xyao-ozs-1.xyao-ozs.root.hwx.site:9862");
     }
     if (secure) {
       conf.set("hadoop.security.authentication", "kerberos");
       conf.set("ozone.om.kerberos.principal", "om/_HOST@ROOT.HWX.SITE");
       UserGroupInformation.setConfiguration(conf);
-      UserGroupInformation.loginUserFromKeytab("om/xyao-ozs-1.xyao-ozs.root.hwx.site@ROOT.HWX.SITE","/tmp/ozone.keytab");
+      // TODO: If you have Hadoop/Ozone security enabled, customize the principal and keytab as appropriate.
+      String principal = "om/xyao-ozs-1.xyao-ozs.root.hwx.site@ROOT.HWX.SITE";
+      String keytab = "/tmp/ozone.keytab";
+      UserGroupInformation.loginUserFromKeytab(principal, keytab);
     }
     return omServiceId != null ?
         OzoneClientFactory.getRpcClient(omServiceId, conf) :
@@ -62,22 +72,25 @@ public class OzoneRpc {
     String omServiceId = "ozone1";
 
     try {
+      // Get an Ozone RPC Client.
       ozoneClient = getOzoneClient(true, omServiceId);
+
+      // An Ozone ObjectStore instance is the entry point to access Ozone.
       ObjectStore store = ozoneClient.getObjectStore();
 
-      // create volume
+      // Create volume with random name.
       String testVolumeName = "testvolume-" + getRandomString(4);
       store.createVolume(testVolumeName);
       OzoneVolume volume = store.getVolume(testVolumeName);
       System.out.println("Volume " + testVolumeName + " created.");
 
-      // create bucket
+      // Create bucket with random name.
       String testBucketName = "testbucket-" + getRandomString(4);
       volume.createBucket(testBucketName);
       OzoneBucket bucket = volume.getBucket(testBucketName);
       System.out.println("Bucket " + testBucketName + " created.");
 
-      // write key
+      // Write key with random name.
       String testKeyName = "testkey-" + getRandomString(4);
       String fileContentWrite = "This is a test key1.";
       try (OzoneOutputStream out = bucket.createKey(testKeyName, 1024,
@@ -86,7 +99,7 @@ public class OzoneRpc {
       }
       System.out.println("Key " + testKeyName + " created.");
 
-      // read key
+      // Read key
       byte[] fileContentRead;
       int lenRead = 0;
       try (OzoneInputStream in = bucket.readKey(testKeyName)) {
@@ -96,7 +109,7 @@ public class OzoneRpc {
       System.out.println("Key " + testKeyName + " read return " + lenRead +
           " bytes");
 
-      // compare the content read vs written
+      // Compare the content from read with those written.
       String contentRead = new String(fileContentRead);
       if (fileContentWrite.equals(contentRead)) {
         System.out.println("Read verification done successfully!");
@@ -107,6 +120,7 @@ public class OzoneRpc {
     } catch (Exception e) {
       System.err.println(e);
     } finally {
+      // Ensure Ozone client resource is safely closed at the end.
       if (ozoneClient != null) {
         ozoneClient.close();
       }
